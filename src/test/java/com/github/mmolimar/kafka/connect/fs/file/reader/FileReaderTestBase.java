@@ -54,7 +54,7 @@ public abstract class FileReaderTestBase {
     @Test(expected = IllegalArgumentException.class)
     public void invalidArgs() throws Throwable {
         try {
-            readerClass.getConstructor(FileSystem.class, Path.class, Map.class).newInstance(null, null, null);
+            readerClass.getConstructor(FileSystem.class, Path.class).newInstance(null, null);
         } catch (Exception e) {
             throw e.getCause();
         }

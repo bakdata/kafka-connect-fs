@@ -28,20 +28,20 @@ public class AvroFileReader extends AbstractFileReader<GenericRecord> {
     private DataFileReader<GenericRecord> reader;
     private Schema schema;
 
-    public AvroFileReader(FileSystem fs, Path filePath, Map<String, Object> config) throws IOException {
-        super(fs, filePath, new GenericRecordToStruct(), config);
+    public AvroFileReader(FileSystem fs, Path filePath) {
+        super(fs, filePath, new GenericRecordToStruct());
 
-        AvroFSInput input = new AvroFSInput(FileContext.getFileContext(filePath.toUri()), filePath);
-        this.reader = new DataFileReader<>(input, new SpecificDatumReader<>(this.schema));
         this.offset = new AvroOffset(0);
     }
 
-    protected void configure(Map<String, Object> config) {
+    public void configure(Map<String, Object> config) throws IOException {
         if (config.get(FILE_READER_AVRO_SCHEMA) != null) {
             this.schema = new Schema.Parser().parse(config.get(FILE_READER_AVRO_SCHEMA).toString());
         } else {
             this.schema = null;
         }
+        AvroFSInput input = new AvroFSInput(FileContext.getFileContext(getFilePath().toUri()), getFilePath());
+        this.reader = new DataFileReader<>(input, new SpecificDatumReader<>(this.schema));
     }
 
     @Override

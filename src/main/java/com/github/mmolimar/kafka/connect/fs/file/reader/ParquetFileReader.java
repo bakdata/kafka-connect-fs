@@ -36,11 +36,10 @@ public class ParquetFileReader extends AbstractFileReader<GenericRecord> {
     private boolean closed;
 
 
-    public ParquetFileReader(FileSystem fs, Path filePath, Map<String, Object> config) throws IOException {
-        super(fs, filePath, new GenericRecordToStruct(), config);
+    public ParquetFileReader(FileSystem fs, Path filePath) throws IOException {
+        super(fs, filePath, new GenericRecordToStruct());
 
         this.offset = new ParquetOffset(0);
-        this.reader = initReader();
         this.closed = false;
     }
 
@@ -57,7 +56,7 @@ public class ParquetFileReader extends AbstractFileReader<GenericRecord> {
         return reader;
     }
 
-    protected void configure(Map<String, Object> config) {
+    public void configure(Map<String, Object> config) throws IOException {
         if (config.get(FILE_READER_PARQUET_SCHEMA) != null) {
             this.schema = new Schema.Parser().parse(config.get(FILE_READER_PARQUET_SCHEMA).toString());
         } else {
@@ -68,6 +67,7 @@ public class ParquetFileReader extends AbstractFileReader<GenericRecord> {
         } else {
             this.projection = null;
         }
+        this.reader = initReader();
     }
 
     @Override

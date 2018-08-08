@@ -15,21 +15,14 @@ public abstract class AbstractFileReader<T> implements FileReader {
     private final Path filePath;
     private ReaderAdapter<T> adapter;
 
-    public AbstractFileReader(FileSystem fs, Path filePath, ReaderAdapter adapter, Map<String, Object> config) {
+    public AbstractFileReader(FileSystem fs, Path filePath, ReaderAdapter adapter) {
         if (fs == null || filePath == null) {
             throw new IllegalArgumentException("fileSystem and filePath are required");
         }
         this.fs = fs;
         this.filePath = filePath;
         this.adapter = adapter;
-
-        Map<String, Object> readerConf = config.entrySet().stream()
-                .filter(entry -> entry.getKey().startsWith(FILE_READER_PREFIX))
-                .collect(Collectors.toMap(entry -> entry.getKey(), entry -> entry.getValue()));
-        configure(readerConf);
     }
-
-    protected abstract void configure(Map<String, Object> config);
 
     protected FileSystem getFs() {
         return fs;

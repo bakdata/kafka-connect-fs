@@ -76,8 +76,11 @@ public class DelimitedTextFileReaderTest extends HdfsFileReaderTestBase {
     @Test(expected = IllegalArgumentException.class)
     public void invaliConfigArgs() throws Throwable {
         try {
-            readerClass.getConstructor(FileSystem.class, Path.class, Map.class).newInstance(fs, dataFile, new HashMap<>());
-        } catch (Exception e) {
+            readerClass.getConstructor(FileSystem.class, Path.class).newInstance(fs, dataFile).configure(
+                    new HashMap<String, Object>() {{
+                        put(AgnosticFileReader.FILE_READER_AGNOSTIC_EXTENSIONS_DELIMITED, FILE_EXTENSION);
+                    }});
+        } catch (IOException e) {
             throw e.getCause();
         }
     }

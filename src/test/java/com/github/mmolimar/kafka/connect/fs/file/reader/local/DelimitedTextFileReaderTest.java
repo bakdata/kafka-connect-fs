@@ -77,11 +77,11 @@ public class DelimitedTextFileReaderTest extends LocalFileReaderTestBase {
     @Test(expected = IllegalArgumentException.class)
     public void invaliConfigArgs() throws Throwable {
         try {
-            readerClass.getConstructor(FileSystem.class, Path.class, Map.class).newInstance(fs, dataFile,
+            readerClass.getConstructor(FileSystem.class, Path.class).newInstance(fs, dataFile).configure(
                     new HashMap<String, Object>() {{
                         put(AgnosticFileReader.FILE_READER_AGNOSTIC_EXTENSIONS_DELIMITED, FILE_EXTENSION);
                     }});
-        } catch (Exception e) {
+        } catch (IOException e) {
             throw e.getCause();
         }
     }

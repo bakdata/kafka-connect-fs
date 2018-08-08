@@ -34,13 +34,14 @@ public class TextFileReader extends AbstractFileReader<TextFileReader.TextRecord
     private Schema schema;
     private Charset charset;
 
-    public TextFileReader(FileSystem fs, Path filePath) {
-        super(fs, filePath, new TxtToStruct());
+    public TextFileReader(FileSystem fs, Path filePath, Map<String, Object> config) throws IOException {
+        super(fs, filePath, new TxtToStruct(), config);
+        this.reader = new LineNumberReader(new InputStreamReader(fs.open(filePath), this.charset));
         this.offset = new TextOffset(0);
     }
 
     @Override
-    public void configure(Map<String, Object> config) throws IOException {
+    protected void configure(Map<String, Object> config) {
         String valueFieldName;
         if (config.get(FILE_READER_TEXT_FIELD_NAME_VALUE) == null ||
                 config.get(FILE_READER_TEXT_FIELD_NAME_VALUE).toString().equals("")) {
@@ -58,7 +59,6 @@ public class TextFileReader extends AbstractFileReader<TextFileReader.TextRecord
         } else {
             this.charset = Charset.forName(config.get(FILE_READER_TEXT_ENCODING).toString());
         }
-        this.reader = new LineNumberReader(new InputStreamReader(getFs().open(getFilePath()), this.charset));
     }
 
     @Override
