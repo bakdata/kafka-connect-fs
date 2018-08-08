@@ -1,47 +1,50 @@
 package com.github.mmolimar.kafka.connect.fs.file.reader;
 
 import com.github.mmolimar.kafka.connect.fs.file.Offset;
+import com.google.common.io.CharStreams;
 import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
 import org.apache.kafka.connect.data.Schema;
 import org.apache.kafka.connect.data.SchemaBuilder;
 import org.apache.kafka.connect.data.Struct;
-import org.apache.kafka.connect.errors.ConnectException;
 
-import java.io.IOException;
-import java.io.InputStreamReader;
-import java.io.LineNumberReader;
+import javax.xml.stream.Location;
+import javax.xml.stream.XMLEventReader;
+import javax.xml.stream.XMLInputFactory;
+import javax.xml.stream.XMLStreamException;
+import javax.xml.stream.events.XMLEvent;
+import java.io.*;
 import java.nio.charset.Charset;
 import java.util.Map;
 import java.util.NoSuchElementException;
 
 import static com.github.mmolimar.kafka.connect.fs.FsSourceTaskConfig.FILE_READER_PREFIX;
 
-public class TextFileReader extends AbstractFileReader<TextFileReader.TextRecord> {
+public class XmlFileReader extends AbstractFileReader<XmlFileReader.XmlRecord> {
 
     public static final String FIELD_NAME_VALUE_DEFAULT = "value";
 
-    private static final String FILE_READER_TEXT = FILE_READER_PREFIX + "text.";
-    private static final String FILE_READER_SEQUENCE_FIELD_NAME_PREFIX = FILE_READER_TEXT + "field_name.";
-
-    public static final String FILE_READER_TEXT_FIELD_NAME_VALUE = FILE_READER_SEQUENCE_FIELD_NAME_PREFIX + "value";
+    private static final String FILE_READER_TEXT = FILE_READER_PREFIX + "xml.";
     public static final String FILE_READER_TEXT_ENCODING = FILE_READER_TEXT + "encoding";
-
+    private static final String FILE_READER_SEQUENCE_FIELD_NAME_PREFIX = FILE_READER_TEXT + "field_name.";
+    public static final String FILE_READER_TEXT_FIELD_NAME_VALUE = FILE_READER_SEQUENCE_FIELD_NAME_PREFIX + "value";
     private final TextOffset offset;
-    private String currentLine;
+    private String currentRecord;
     private boolean finished = false;
-    private LineNumberReader reader;
+    private XMLEventReader reader;
     private Schema schema;
     private Charset charset;
+    // needed for skipping to a specific record
+    private String rootStartTag;
+    private boolean closed;
 
-    public TextFileReader(FileSystem fs, Path filePath, Map<String, Object> config) throws IOException {
-        super(fs, filePath, new TxtToStruct(), config);
-        this.reader = new LineNumberReader(new InputStreamReader(fs.open(filePath), this.charset));
+    public XmlFileReader(FileSystem fs, Path filePath) throws IOException {
+        super(fs, filePath, new XmlToStruct());
         this.offset = new TextOffset(0);
     }
 
     @Override
-    protected void configure(Map<String, Object> config) {
+    public void configure(Map<String, Object> config) throws IOException {
         String valueFieldName;
         if (config.get(FILE_READER_TEXT_FIELD_NAME_VALUE) == null ||
                 config.get(FILE_READER_TEXT_FIELD_NAME_VALUE).toString().equals("")) {
@@ -59,41 +62,63 @@ public class TextFileReader extends AbstractFileReader<TextFileReader.TextRecord
         } else {
             this.charset = Charset.forName(config.get(FILE_READER_TEXT_ENCODING).toString());
         }
+        XMLInputFactory f = XMLInputFactory.newInstance();
+        try {
+            this.reader = f.createXMLEventReader(new InputStreamReader(getFs().open(getFilePath()), this.charset));
+            // go to root
+            XMLEvent event = null;
+            while (reader.hasNext() && !(event = this.reader.nextEvent()).isStartElement())
+                ;
+            if(event != null) {
+                final StringWriter writer = new StringWriter();
+                event.writeAsEncodedUnicode(writer);
+                this.rootStartTag = writer.toString();
+            }
+        } catch (XMLStreamException e) {
+            throw new IOException("Cannot open event reader", e);
+        }
     }
 
     @Override
     public boolean hasNext() {
-        if (currentLine != null) {
+        checkClosed();
+        if (currentRecord != null) {
             return true;
         } else if (finished) {
             return false;
         } else {
-            try {
-                while (true) {
-                    String line = reader.readLine();
-                    offset.setOffset(reader.getLineNumber());
-                    if (line == null) {
-                        finished = true;
-                        return false;
+            while (reader.hasNext()) {
+                try {
+                    XMLEvent event = reader.nextEvent();
+                    if (event.isStartElement()) {
+                        currentRecord = readCompleteElement(event);
+                        offset.setOffset(event.getLocation().getCharacterOffset());
+                        return true;
+                    } else if(event.isEndElement()) { // can only happen for root element
+                        offset.setOffset(event.getLocation().getCharacterOffset());
                     }
-                    currentLine = line;
-                    return true;
+                } catch (XMLStreamException e) {
+                    final NoSuchElementException nse = new NoSuchElementException("Cannot parse xml");
+                    nse.initCause(e);
+                    throw nse;
                 }
-            } catch (IOException ioe) {
-                throw new IllegalStateException(ioe);
             }
+            finished = true;
+            return false;
         }
     }
 
-    @Override
-    protected TextRecord nextRecord() {
-        if (!hasNext()) {
-            throw new NoSuchElementException("There are no more records in file: " + getFilePath());
+    private String readCompleteElement(XMLEvent startEvent) throws XMLStreamException {
+        int depth = 1;
+        final StringWriter writer = new StringWriter();
+        startEvent.writeAsEncodedUnicode(writer);
+        while(reader.hasNext() && depth > 0) {
+            XMLEvent event = reader.nextEvent();
+            event.writeAsEncodedUnicode(writer);
+            if(event.isStartElement()) depth++;
+            else if(event.isEndElement()) depth--;
         }
-        String aux = currentLine;
-        currentLine = null;
-
-        return new TextRecord(schema, aux);
+        return writer.toString();
     }
 
     @Override
@@ -101,20 +126,26 @@ public class TextFileReader extends AbstractFileReader<TextFileReader.TextRecord
         if (offset.getRecordOffset() < 0) {
             throw new IllegalArgumentException("Record offset must be greater than 0");
         }
+        checkClosed();
         try {
-            if (offset.getRecordOffset() < reader.getLineNumber()) {
-                this.reader = new LineNumberReader(new InputStreamReader(getFs().open(getFilePath())));
-                currentLine = null;
-            }
-            while ((currentLine = reader.readLine()) != null) {
-                if (reader.getLineNumber() - 1 == offset.getRecordOffset()) {
-                    this.offset.setOffset(reader.getLineNumber());
-                    return;
-                }
-            }
-            this.offset.setOffset(reader.getLineNumber());
-        } catch (IOException ioe) {
-            throw new ConnectException("Error seeking file " + getFilePath(), ioe);
+            XMLInputFactory f = XMLInputFactory.newInstance();
+            final InputStreamReader tail = new InputStreamReader(getFs().open(getFilePath()), this.charset);
+            CharStreams.skipFully(tail, offset.getRecordOffset());
+            Reader reader = CharStreams.join(CharStreams.newReaderSupplier(this.rootStartTag), () -> tail).getInput();
+            this.reader = f.createXMLEventReader(reader);
+            this.offset.setSeekOffset(offset.getRecordOffset() - this.rootStartTag.length());
+            this.currentRecord = null;
+            // go to root
+            while (this.reader.hasNext() && !this.reader.nextEvent().isStartElement())
+                ;
+        } catch (XMLStreamException | IOException e) {
+            throw new RuntimeException("Cannot seek in event reader", e);
+        }
+    }
+
+    private void checkClosed() {
+        if (closed) {
+            throw new IllegalStateException("Stream is closed!");
         }
     }
 
@@ -125,11 +156,28 @@ public class TextFileReader extends AbstractFileReader<TextFileReader.TextRecord
 
     @Override
     public void close() throws IOException {
-        reader.close();
+        try {
+            this.closed = true;
+            reader.close();
+        } catch (XMLStreamException e) {
+            throw new IOException(e);
+        }
+    }
+
+    @Override
+    protected XmlRecord nextRecord() {
+        if (!hasNext()) {
+            throw new NoSuchElementException("There are no more records in file: " + getFilePath());
+        }
+        checkClosed();
+        String aux = currentRecord;
+        currentRecord = null;
+
+        return new XmlRecord(schema, aux);
     }
 
     public static class TextOffset implements Offset {
-        private long offset;
+        private long offset, seekOffset;
 
         public TextOffset(long offset) {
             this.offset = offset;
@@ -141,24 +189,28 @@ public class TextFileReader extends AbstractFileReader<TextFileReader.TextRecord
 
         @Override
         public long getRecordOffset() {
-            return offset;
+            return offset + seekOffset;
+        }
+
+        public void setSeekOffset(long seekOffset) {
+            this.seekOffset = seekOffset;
         }
     }
 
-    static class TxtToStruct implements ReaderAdapter<TextRecord> {
+    static class XmlToStruct implements ReaderAdapter<XmlRecord> {
 
         @Override
-        public Struct apply(TextRecord record) {
+        public Struct apply(XmlRecord record) {
             return new Struct(record.schema)
                     .put(record.schema.fields().get(0), record.value);
         }
     }
 
-    static class TextRecord {
+    static class XmlRecord {
         private final Schema schema;
         private final String value;
 
-        public TextRecord(Schema schema, String value) {
+        public XmlRecord(Schema schema, String value) {
             this.schema = schema;
             this.value = value;
         }
