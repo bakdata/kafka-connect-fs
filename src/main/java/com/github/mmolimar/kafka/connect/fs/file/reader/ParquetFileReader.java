@@ -33,14 +33,12 @@ public class ParquetFileReader extends AbstractFileReader<GenericRecord> {
     private GenericRecord currentRecord;
     private Schema schema;
     private Schema projection;
-    private boolean closed;
 
 
     public ParquetFileReader(FileSystem fs, Path filePath) throws IOException {
         super(fs, filePath, new GenericRecordToStruct());
 
         this.offset = new ParquetOffset(0);
-        this.closed = false;
     }
 
     private ParquetReader<GenericRecord> initReader() throws IOException {
@@ -72,7 +70,7 @@ public class ParquetFileReader extends AbstractFileReader<GenericRecord> {
 
     @Override
     public boolean hasNext() {
-        if (closed) return false;
+        checkClosed();
         if (currentRecord == null) {
             try {
                 currentRecord = reader.read();
@@ -102,9 +100,7 @@ public class ParquetFileReader extends AbstractFileReader<GenericRecord> {
 
     @Override
     public void seek(Offset offset) {
-        if (closed) {
-            throw new ConnectException("Stream is closed!");
-        }
+        checkClosed();
         if (offset.getRecordOffset() < 0) {
             throw new IllegalArgumentException("Record offset must be greater than 0");
         }
@@ -112,7 +108,6 @@ public class ParquetFileReader extends AbstractFileReader<GenericRecord> {
             try {
                 this.reader = initReader();
                 this.offset.setOffset(0);
-                this.closed = false;
             } catch (IOException ioe) {
                 throw new ConnectException("Error initializing parquet reader", ioe);
             }
@@ -129,7 +124,7 @@ public class ParquetFileReader extends AbstractFileReader<GenericRecord> {
 
     @Override
     public void close() throws IOException {
-        this.closed = true;
+        super.close();
         reader.close();
     }
 

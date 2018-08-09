@@ -63,6 +63,7 @@ public class TextFileReader extends AbstractFileReader<TextFileReader.TextRecord
 
     @Override
     public boolean hasNext() {
+        checkClosed();
         if (currentLine != null) {
             return true;
         } else if (finished) {
@@ -101,6 +102,7 @@ public class TextFileReader extends AbstractFileReader<TextFileReader.TextRecord
         if (offset.getRecordOffset() < 0) {
             throw new IllegalArgumentException("Record offset must be greater than 0");
         }
+        checkClosed();
         try {
             if (offset.getRecordOffset() < reader.getLineNumber()) {
                 this.reader = new LineNumberReader(new InputStreamReader(getFs().open(getFilePath())));
@@ -125,7 +127,9 @@ public class TextFileReader extends AbstractFileReader<TextFileReader.TextRecord
 
     @Override
     public void close() throws IOException {
+        super.close();
         reader.close();
+        this.currentLine = null;
     }
 
     public static class TextOffset implements Offset {

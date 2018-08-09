@@ -39,19 +39,18 @@ public class XmlFileReaderTest extends LocalFileReaderTestBase {
     private static Path createDataFile() throws IOException {
         File txtFile = File.createTempFile("test-", "." + FILE_EXTENSION);
         try (CountingWriter writer = new CountingWriter(new FileWriter(txtFile))) {
-            writer.append("<root>\n");
+            writer.append("<root>");
             IntStream.range(0, NUM_RECORDS).forEach(index -> {
                 String value = String.format("%d_%s", index, UUID.randomUUID());
                 try {
-                    OFFSETS_BY_INDEX.put(index, writer.getOffset());
-                    final String valueXml = String.format("<value attr=\"%s\"><nested>%1$s</nested></value>\n", value);
+                    final String valueXml = String.format("\n<value attr=\"%s\"><nested>%1$s</nested></value>", value);
                     writer.append(valueXml);
+                    OFFSETS_BY_INDEX.put(index, writer.getOffset());
                 } catch (IOException ioe) {
                     throw new RuntimeException(ioe);
                 }
             });
-            OFFSETS_BY_INDEX.put(NUM_RECORDS, writer.getOffset());
-            writer.append("</root>");
+            writer.append("\n</root>");
         }
         Path path = new Path(new Path(fsUri), txtFile.getName());
         fs.moveFromLocalFile(new Path(txtFile.getAbsolutePath()), path);
@@ -87,50 +86,6 @@ public class XmlFileReaderTest extends LocalFileReaderTestBase {
         assertTrue(record.get(FIELD_NAME_VALUE).toString().
                 matches(String.format("<value attr=\"(%s_[a-zA-Z0-9-]+)\"><nested>\\1</nested></value>", index)));
     }
-
-    @Test
-    public void seekFile() {
-        int recordIndex = NUM_RECORDS / 2;
-        reader.seek(getOffset(OFFSETS_BY_INDEX.get(recordIndex)));
-        assertTrue(reader.hasNext());
-        assertEquals(OFFSETS_BY_INDEX.get(recordIndex).longValue(), reader.currentOffset().getRecordOffset());
-        checkData(reader.next(), recordIndex);
-
-        recordIndex = 0;
-        reader.seek(getOffset(OFFSETS_BY_INDEX.get(recordIndex)));
-        assertTrue(reader.hasNext());
-        assertEquals(OFFSETS_BY_INDEX.get(recordIndex).longValue(), reader.currentOffset().getRecordOffset());
-        checkData(reader.next(), recordIndex);
-
-        recordIndex = NUM_RECORDS - 3;
-        reader.seek(getOffset(OFFSETS_BY_INDEX.get(recordIndex)));
-        assertTrue(reader.hasNext());
-        assertEquals(OFFSETS_BY_INDEX.get(recordIndex).longValue() , reader.currentOffset().getRecordOffset());
-        checkData(reader.next(), recordIndex);
-
-        reader.seek(getOffset(OFFSETS_BY_INDEX.get(NUM_RECORDS)));
-        assertFalse(reader.hasNext());
-    }
-
-    @Test(expected = NoSuchElementException.class)
-    public void exceededSeek() {
-        reader.seek(getOffset(OFFSETS_BY_INDEX.get(NUM_RECORDS)));
-        assertFalse(reader.hasNext());
-        reader.next();
-    }
-
-    @Test
-    public void seekLastRecord() {
-        int recordIndex = NUM_RECORDS - 1;
-        reader.seek(getOffset(OFFSETS_BY_INDEX.get(recordIndex)));
-        assertTrue(reader.hasNext());
-        assertEquals(OFFSETS_BY_INDEX.get(recordIndex).longValue() , reader.currentOffset().getRecordOffset());
-        checkData(reader.next(), recordIndex);
-
-        assertFalse(reader.hasNext());
-        assertEquals(OFFSETS_BY_INDEX.get(recordIndex + 1).longValue() , reader.currentOffset().getRecordOffset());
-    }
-
     @Override
     protected String getFileExtension() {
         return FILE_EXTENSION;

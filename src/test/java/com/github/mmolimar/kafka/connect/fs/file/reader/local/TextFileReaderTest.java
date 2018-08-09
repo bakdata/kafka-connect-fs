@@ -42,7 +42,7 @@ public class TextFileReaderTest extends LocalFileReaderTestBase {
                 String value = String.format("%d_%s", index, UUID.randomUUID());
                 try {
                     writer.append(value + "\n");
-                    OFFSETS_BY_INDEX.put(index, Long.valueOf(index++));
+                    OFFSETS_BY_INDEX.put(index, Long.valueOf(++index));
                 } catch (IOException ioe) {
                     throw new RuntimeException(ioe);
                 }

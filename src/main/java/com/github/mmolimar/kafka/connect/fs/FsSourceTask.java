@@ -72,7 +72,9 @@ public class FsSourceTask extends SourceTask {
                 try (FileReader reader = policy.offer(metadata, context.offsetStorageReader())) {
                     log.info("Processing records for file {}", metadata);
                     while (reader.hasNext()) {
-                        results.add(convert(metadata, reader.currentOffset(), reader.next()));
+                        // make sure to call next before get offset
+                        final Struct next = reader.next();
+                        results.add(convert(metadata, reader.currentOffset(), next));
                     }
                 } catch (ConnectException | IOException e) {
                     //when an exception happens reading a file, the connector continues

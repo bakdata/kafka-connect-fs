@@ -50,7 +50,7 @@ public class DelimitedTextFileReader extends AbstractFileReader<DelimitedTextFil
         this.defaultValue = config.get(FILE_READER_DELIMITED_DEFAULT_VALUE) == null ?
                 null : config.get(FILE_READER_DELIMITED_DEFAULT_VALUE).toString();
         this.hasHeader = Boolean.valueOf((String) config.get(FILE_READER_DELIMITED_HEADER));
-        this.offset = new DelimitedTextOffset(0, hasHeader);
+        this.offset = new DelimitedTextOffset(0);
 
         this.inner.configure(config);
 
@@ -114,15 +114,13 @@ public class DelimitedTextFileReader extends AbstractFileReader<DelimitedTextFil
 
     public static class DelimitedTextOffset implements Offset {
         private long offset;
-        private boolean hasHeader;
 
-        public DelimitedTextOffset(long offset, boolean hasHeader) {
-            this.hasHeader = hasHeader;
-            this.offset = hasHeader && offset >= 0 ? offset + 1 : offset;
+        public DelimitedTextOffset(long offset) {
+            this.offset = offset;
         }
 
         public void setOffset(long offset) {
-            this.offset = hasHeader && offset > 0 ? offset - 1 : offset;
+            this.offset = offset;
         }
 
         protected void inc() {

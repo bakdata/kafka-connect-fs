@@ -63,7 +63,7 @@ public class ParquetFileReaderTest extends HdfsFileReaderTestBase {
                 datum.put(FIELD_NAME, String.format("%d_name_%s", index, UUID.randomUUID()));
                 datum.put(FIELD_SURNAME, String.format("%d_surname_%s", index, UUID.randomUUID()));
                 try {
-                    OFFSETS_BY_INDEX.put(index, Long.valueOf(index));
+                    OFFSETS_BY_INDEX.put(index, Long.valueOf(++index));
                     writer.write(datum);
                 } catch (IOException ioe) {
                     throw new RuntimeException(ioe);

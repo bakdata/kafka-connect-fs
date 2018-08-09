@@ -4,6 +4,7 @@ import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
 import org.apache.kafka.connect.data.Struct;
 
+import java.io.IOException;
 import java.util.Map;
 import java.util.stream.Collectors;
 
@@ -14,6 +15,7 @@ public abstract class AbstractFileReader<T> implements FileReader {
     private final FileSystem fs;
     private final Path filePath;
     private ReaderAdapter<T> adapter;
+    private boolean closed;
 
     public AbstractFileReader(FileSystem fs, Path filePath, ReaderAdapter adapter) {
         if (fs == null || filePath == null) {
@@ -22,6 +24,17 @@ public abstract class AbstractFileReader<T> implements FileReader {
         this.fs = fs;
         this.filePath = filePath;
         this.adapter = adapter;
+    }
+
+    protected final void checkClosed() {
+        if (closed) {
+            throw new IllegalStateException("Stream is closed!");
+        }
+    }
+    
+    @Override
+    public void close() throws IOException {
+        this.closed = true;
     }
 
     protected FileSystem getFs() {

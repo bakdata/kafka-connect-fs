@@ -103,22 +103,22 @@ public abstract class FileReaderTestBase {
         int recordIndex = NUM_RECORDS / 2;
         reader.seek(getOffset(OFFSETS_BY_INDEX.get(recordIndex)));
         assertTrue(reader.hasNext());
-        assertEquals(OFFSETS_BY_INDEX.get(recordIndex).longValue() + 1, reader.currentOffset().getRecordOffset());
-        checkData(reader.next(), recordIndex);
+        assertEquals(OFFSETS_BY_INDEX.get(recordIndex + 1).longValue(), reader.currentOffset().getRecordOffset());
+        checkData(reader.next(), recordIndex + 1);
 
         recordIndex = 0;
         reader.seek(getOffset(OFFSETS_BY_INDEX.get(recordIndex)));
         assertTrue(reader.hasNext());
-        assertEquals(OFFSETS_BY_INDEX.get(recordIndex).longValue() + 1, reader.currentOffset().getRecordOffset());
-        checkData(reader.next(), recordIndex);
+        assertEquals(OFFSETS_BY_INDEX.get(recordIndex + 1).longValue(), reader.currentOffset().getRecordOffset());
+        checkData(reader.next(), recordIndex + 1);
 
-        recordIndex = NUM_RECORDS - 3;
+        recordIndex = NUM_RECORDS - 2;
         reader.seek(getOffset(OFFSETS_BY_INDEX.get(recordIndex)));
         assertTrue(reader.hasNext());
-        assertEquals(OFFSETS_BY_INDEX.get(recordIndex).longValue() + 1, reader.currentOffset().getRecordOffset());
-        checkData(reader.next(), recordIndex);
+        assertEquals(OFFSETS_BY_INDEX.get(recordIndex + 1).longValue(), reader.currentOffset().getRecordOffset());
+        checkData(reader.next(), recordIndex + 1);
 
-        reader.seek(getOffset(OFFSETS_BY_INDEX.get(NUM_RECORDS - 1) + 1));
+        reader.seek(getOffset(OFFSETS_BY_INDEX.get(NUM_RECORDS - 1)));
         assertFalse(reader.hasNext());
 
     }
@@ -130,12 +130,12 @@ public abstract class FileReaderTestBase {
 
     @Test(expected = NoSuchElementException.class)
     public void exceededSeek() {
-        reader.seek(getOffset(OFFSETS_BY_INDEX.get(NUM_RECORDS - 1) + 1));
+        reader.seek(getOffset(OFFSETS_BY_INDEX.get(NUM_RECORDS - 1)));
         assertFalse(reader.hasNext());
         reader.next();
     }
 
-    @Test(expected = RuntimeException.class)
+    @Test(expected = IllegalStateException.class)
     public void readFileAlreadyClosed() throws IOException {
         reader.close();
         assertFalse(reader.hasNext());

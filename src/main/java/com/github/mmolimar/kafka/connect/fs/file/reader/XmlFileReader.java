@@ -36,9 +36,8 @@ public class XmlFileReader extends AbstractFileReader<XmlFileReader.XmlRecord> {
     private Charset charset;
     // needed for skipping to a specific record
     private String rootStartTag;
-    private boolean closed;
 
-    public XmlFileReader(FileSystem fs, Path filePath) throws IOException {
+    public XmlFileReader(FileSystem fs, Path filePath) {
         super(fs, filePath, new XmlToStruct());
         this.offset = new TextOffset(0);
     }
@@ -92,10 +91,8 @@ public class XmlFileReader extends AbstractFileReader<XmlFileReader.XmlRecord> {
                     XMLEvent event = reader.nextEvent();
                     if (event.isStartElement()) {
                         currentRecord = readCompleteElement(event);
-                        offset.setOffset(event.getLocation().getCharacterOffset());
+                        offset.setOffset(reader.peek().getLocation().getCharacterOffset());
                         return true;
-                    } else if(event.isEndElement()) { // can only happen for root element
-                        offset.setOffset(event.getLocation().getCharacterOffset());
                     }
                 } catch (XMLStreamException e) {
                     final NoSuchElementException nse = new NoSuchElementException("Cannot parse xml");
@@ -142,13 +139,6 @@ public class XmlFileReader extends AbstractFileReader<XmlFileReader.XmlRecord> {
             throw new RuntimeException("Cannot seek in event reader", e);
         }
     }
-
-    private void checkClosed() {
-        if (closed) {
-            throw new IllegalStateException("Stream is closed!");
-        }
-    }
-
     @Override
     public Offset currentOffset() {
         return offset;
@@ -157,7 +147,7 @@ public class XmlFileReader extends AbstractFileReader<XmlFileReader.XmlRecord> {
     @Override
     public void close() throws IOException {
         try {
-            this.closed = true;
+            super.close();
             reader.close();
         } catch (XMLStreamException e) {
             throw new IOException(e);
@@ -169,7 +159,6 @@ public class XmlFileReader extends AbstractFileReader<XmlFileReader.XmlRecord> {
         if (!hasNext()) {
             throw new NoSuchElementException("There are no more records in file: " + getFilePath());
         }
-        checkClosed();
         String aux = currentRecord;
         currentRecord = null;
 

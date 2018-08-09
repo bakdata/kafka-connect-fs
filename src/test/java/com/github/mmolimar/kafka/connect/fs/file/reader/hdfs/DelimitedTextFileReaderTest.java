@@ -7,9 +7,12 @@ import com.github.mmolimar.kafka.connect.fs.file.reader.FileReader;
 import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
 import org.apache.kafka.connect.data.Struct;
+import org.junit.Before;
 import org.junit.BeforeClass;
 import org.junit.Ignore;
 import org.junit.Test;
+import org.junit.runner.RunWith;
+import org.junit.runners.Parameterized;
 
 import java.io.File;
 import java.io.FileWriter;
@@ -22,6 +25,7 @@ import java.util.stream.IntStream;
 
 import static org.junit.Assert.*;
 
+@RunWith(Parameterized.class)
 public class DelimitedTextFileReaderTest extends HdfsFileReaderTestBase {
 
     private static final String FIELD_COLUMN1 = "column_1";
@@ -29,14 +33,33 @@ public class DelimitedTextFileReaderTest extends HdfsFileReaderTestBase {
     private static final String FIELD_COLUMN3 = "column_3";
     private static final String FIELD_COLUMN4 = "column_4";
     private static final String FILE_EXTENSION = "csv";
+    private static Path dataFileWithHeader, dataFileWithoutHeader;
+    private static final Map<Integer, Long> OFFSETS_BY_INDEX_WITH_HEADER = new HashMap<>(), OFFSETS_BY_INDEX_WITHOUT_HEADER = new HashMap<>();
+
+    private boolean hasHeader;
+
+    @Parameterized.Parameters(name = "hasHeader = {0}")
+    public static Object[] getParameters() {
+        return new Object[] { true, false };
+    }
+
+    public DelimitedTextFileReaderTest(boolean hasHeader) {
+        this.hasHeader = hasHeader;
+        // FIXME: ugly hack to change not too much in the base test; should be properly refactored
+        dataFile = hasHeader ? dataFileWithHeader : dataFileWithoutHeader;
+        OFFSETS_BY_INDEX.putAll(hasHeader ? OFFSETS_BY_INDEX_WITH_HEADER : OFFSETS_BY_INDEX_WITHOUT_HEADER);
+    }
 
     @BeforeClass
     public static void setUp() throws IOException {
         readerClass = AgnosticFileReader.class;
-        dataFile = createDataFile(true);
+        dataFileWithHeader = createDataFile(true);
+        OFFSETS_BY_INDEX_WITH_HEADER.putAll(OFFSETS_BY_INDEX);
+        dataFileWithoutHeader = createDataFile(false);
+        OFFSETS_BY_INDEX_WITHOUT_HEADER.putAll(OFFSETS_BY_INDEX);
         readerConfig = new HashMap<String, Object>() {{
             put(DelimitedTextFileReader.FILE_READER_DELIMITED_TOKEN, ",");
-            put(DelimitedTextFileReader.FILE_READER_DELIMITED_HEADER, "true");
+            put(AgnosticFileReader.FILE_READER_AGNOSTIC_EXTENSIONS_DELIMITED, FILE_EXTENSION);
         }};
     }
 
@@ -50,7 +73,7 @@ public class DelimitedTextFileReaderTest extends HdfsFileReaderTestBase {
                 String value = String.format("%d_%s", index, UUID.randomUUID());
                 try {
                     writer.append(value + "," + value + "," + value + "," + value + "\n");
-                    if (header) OFFSETS_BY_INDEX.put(index, Long.valueOf(index++));
+                    OFFSETS_BY_INDEX.put(index, Long.valueOf(++index + (header ? 1 : 0)));
                 } catch (IOException ioe) {
                     throw new RuntimeException(ioe);
                 }
@@ -59,6 +82,14 @@ public class DelimitedTextFileReaderTest extends HdfsFileReaderTestBase {
         Path path = new Path(new Path(fsUri), txtFile.getName());
         fs.moveFromLocalFile(new Path(txtFile.getAbsolutePath()), path);
         return path;
+    }
+
+    @Before
+    public void openReader() throws Throwable {
+        dataFile = hasHeader ? dataFileWithHeader : dataFileWithoutHeader;
+        readerConfig.put(DelimitedTextFileReader.FILE_READER_DELIMITED_HEADER, Boolean.toString(hasHeader));
+        reader = getReader(fs, dataFile, readerConfig);
+        assertTrue(reader.getFilePath().equals(dataFile));
     }
 
     @Ignore(value = "This test does not apply for txt files")
@@ -83,26 +114,6 @@ public class DelimitedTextFileReaderTest extends HdfsFileReaderTestBase {
         } catch (IOException e) {
             throw e.getCause();
         }
-    }
-
-    @Test
-    public void readAllDataWithoutHeader() throws Throwable {
-        Path file = createDataFile(false);
-        FileReader reader = getReader(fs, file, new HashMap<String, Object>() {{
-            put(DelimitedTextFileReader.FILE_READER_DELIMITED_TOKEN, ",");
-            put(DelimitedTextFileReader.FILE_READER_DELIMITED_HEADER, "false");
-        }});
-
-        assertTrue(reader.hasNext());
-
-        int recordCount = 0;
-        while (reader.hasNext()) {
-            Struct record = reader.next();
-            checkData(record, recordCount);
-            recordCount++;
-        }
-        assertEquals("The number of records in the file does not match", NUM_RECORDS, recordCount);
-
     }
 
     @Test
@@ -137,43 +148,8 @@ public class DelimitedTextFileReaderTest extends HdfsFileReaderTestBase {
     }
 
     @Test
-    public void seekFileWithoutHeader() throws Throwable {
-        Path file = createDataFile(false);
-        FileReader reader = getReader(fs, file, new HashMap<String, Object>() {{
-            put(DelimitedTextFileReader.FILE_READER_DELIMITED_TOKEN, ",");
-            put(DelimitedTextFileReader.FILE_READER_DELIMITED_HEADER, "false");
-        }});
-
-        assertTrue(reader.hasNext());
-
-        int recordIndex = NUM_RECORDS / 2;
-        reader.seek(getOffset(OFFSETS_BY_INDEX.get(recordIndex), false));
-        assertTrue(reader.hasNext());
-        assertEquals(OFFSETS_BY_INDEX.get(recordIndex).longValue() + 1, reader.currentOffset().getRecordOffset());
-        checkData(reader.next(), recordIndex);
-
-        recordIndex = 0;
-        reader.seek(getOffset(OFFSETS_BY_INDEX.get(recordIndex), false));
-        assertTrue(reader.hasNext());
-        assertEquals(OFFSETS_BY_INDEX.get(recordIndex).longValue() + 1, reader.currentOffset().getRecordOffset());
-        checkData(reader.next(), recordIndex);
-
-        recordIndex = NUM_RECORDS - 3;
-        reader.seek(getOffset(OFFSETS_BY_INDEX.get(recordIndex), false));
-        assertTrue(reader.hasNext());
-        assertEquals(OFFSETS_BY_INDEX.get(recordIndex).longValue() + 1, reader.currentOffset().getRecordOffset());
-        checkData(reader.next(), recordIndex);
-
-        reader.seek(getOffset(OFFSETS_BY_INDEX.get(NUM_RECORDS - 1) + 1, false));
-        assertFalse(reader.hasNext());
-
-    }
-
-    @Test
     public void validFileEncoding() throws Throwable {
-        Map<String, Object> cfg = new HashMap<String, Object>() {{
-            put(DelimitedTextFileReader.FILE_READER_DELIMITED_TOKEN, ",");
-            put(DelimitedTextFileReader.FILE_READER_DELIMITED_HEADER, "true");
+        Map<String, Object> cfg = new HashMap<String, Object>(readerConfig) {{
             put(DelimitedTextFileReader.FILE_READER_DELIMITED_ENCODING, "Cp1252");
         }};
         getReader(fs, dataFile, cfg);
@@ -181,9 +157,7 @@ public class DelimitedTextFileReaderTest extends HdfsFileReaderTestBase {
 
     @Test(expected = UnsupportedCharsetException.class)
     public void invalidFileEncoding() throws Throwable {
-        Map<String, Object> cfg = new HashMap<String, Object>() {{
-            put(DelimitedTextFileReader.FILE_READER_DELIMITED_TOKEN, ",");
-            put(DelimitedTextFileReader.FILE_READER_DELIMITED_HEADER, "true");
+        Map<String, Object> cfg = new HashMap<String, Object>(readerConfig) {{
             put(DelimitedTextFileReader.FILE_READER_DELIMITED_ENCODING, "invalid_charset");
         }};
         getReader(fs, dataFile, cfg);
@@ -191,11 +165,7 @@ public class DelimitedTextFileReaderTest extends HdfsFileReaderTestBase {
 
     @Override
     protected Offset getOffset(long offset) {
-        return getOffset(offset, true);
-    }
-
-    private Offset getOffset(long offset, boolean hasHeader) {
-        return new DelimitedTextFileReader.DelimitedTextOffset(offset, hasHeader);
+        return new DelimitedTextFileReader.DelimitedTextOffset(offset);
     }
 
     @Override

@@ -46,22 +46,24 @@ public class AvroFileReader extends AbstractFileReader<GenericRecord> {
 
     @Override
     public boolean hasNext() {
+        checkClosed();
         return reader.hasNext();
     }
 
     @Override
     protected GenericRecord nextRecord() {
         GenericRecord record = reader.next();
-        this.offset.inc();
+        this.offset.setOffset(reader.previousSync());
 
         return record;
     }
 
     @Override
     public void seek(Offset offset) {
+        checkClosed();
         try {
             reader.sync(offset.getRecordOffset());
-            this.offset.setOffset(reader.previousSync() - 15);
+            this.offset.setOffset(reader.previousSync());
         } catch (IOException ioe) {
             throw new ConnectException("Error seeking file " + getFilePath(), ioe);
         }
@@ -74,7 +76,7 @@ public class AvroFileReader extends AbstractFileReader<GenericRecord> {
 
     @Override
     public void close() throws IOException {
-        reader.sync(0);
+        super.close();
         reader.close();
     }
 
