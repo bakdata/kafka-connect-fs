@@ -2,13 +2,15 @@ package com.github.mmolimar.kafka.connect.fs.file.reader;
 
 import com.github.mmolimar.kafka.connect.fs.file.Offset;
 import com.google.common.io.CharStreams;
+import org.apache.hadoop.fs.FSDataInputStream;
 import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
 import org.apache.kafka.connect.data.Schema;
 import org.apache.kafka.connect.data.SchemaBuilder;
 import org.apache.kafka.connect.data.Struct;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
-import javax.xml.stream.Location;
 import javax.xml.stream.XMLEventReader;
 import javax.xml.stream.XMLInputFactory;
 import javax.xml.stream.XMLStreamException;
@@ -17,15 +19,21 @@ import java.io.*;
 import java.nio.charset.Charset;
 import java.util.Map;
 import java.util.NoSuchElementException;
+import java.util.zip.GZIPInputStream;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipInputStream;
 
 import static com.github.mmolimar.kafka.connect.fs.FsSourceTaskConfig.FILE_READER_PREFIX;
 
 public class XmlFileReader extends AbstractFileReader<XmlFileReader.XmlRecord> {
+    private final static Logger log = LoggerFactory.getLogger(XmlFileReader.class);
 
     public static final String FIELD_NAME_VALUE_DEFAULT = "value";
+    public static final String COMPRESSION_DEFAULT = Compression.AUTO.toString();
 
     private static final String FILE_READER_TEXT = FILE_READER_PREFIX + "xml.";
     public static final String FILE_READER_TEXT_ENCODING = FILE_READER_TEXT + "encoding";
+    public static final String FILE_READER_TEXT_COMPRESSION = FILE_READER_TEXT + "compression";
     private static final String FILE_READER_SEQUENCE_FIELD_NAME_PREFIX = FILE_READER_TEXT + "field_name.";
     public static final String FILE_READER_TEXT_FIELD_NAME_VALUE = FILE_READER_SEQUENCE_FIELD_NAME_PREFIX + "value";
     private final TextOffset offset;
@@ -34,8 +42,57 @@ public class XmlFileReader extends AbstractFileReader<XmlFileReader.XmlRecord> {
     private XMLEventReader reader;
     private Schema schema;
     private Charset charset;
+    private Compression compression;
     // needed for skipping to a specific record
     private String rootStartTag;
+    private final static XMLInputFactory INPUT_FACTORY = XMLInputFactory.newInstance();
+
+    public enum Compression {
+        AUTO {
+            @Override
+            public InputStream open(FileSystem fs, Path filePath) throws IOException {
+                final String name = filePath.getName();
+                switch(name.substring(name.lastIndexOf('.') + 1).toLowerCase()) {
+                    case "zip": return ZIP.open(fs, filePath);
+                    case "gz": return GZIP.open(fs, filePath);
+                    default: return NONE.open(fs, filePath);
+                }
+            }
+        },
+        NONE {
+            @Override
+            public InputStream open(FileSystem fs, Path filePath) throws IOException {
+                return fs.open(filePath);
+            }
+        },
+        ZIP {
+            @Override
+            public InputStream open(FileSystem fs, Path filePath) throws IOException {
+                final ZipInputStream inputStream = new ZipInputStream(NONE.open(fs, filePath));
+                ZipEntry entry;
+                while((entry = inputStream.getNextEntry()) != null) {
+                    if(entry.getName().endsWith(".xml")) {
+                        break;
+                    }
+                }
+                return inputStream;
+            }
+        },
+        GZIP {
+            @Override
+            public InputStream open(FileSystem fs, Path filePath) throws IOException {
+                return new GZIPInputStream(NONE.open(fs, filePath), 1_000_000);
+            }
+        };
+
+        public abstract InputStream open(FileSystem fs, Path filePath) throws IOException;
+    }
+
+    static {
+        INPUT_FACTORY.setProperty(XMLInputFactory.IS_VALIDATING, false);
+        INPUT_FACTORY.setProperty(XMLInputFactory.SUPPORT_DTD, false);
+        INPUT_FACTORY.setProperty(XMLInputFactory.IS_SUPPORTING_EXTERNAL_ENTITIES, false);
+    }
 
     public XmlFileReader(FileSystem fs, Path filePath) {
         super(fs, filePath, new XmlToStruct());
@@ -54,6 +111,7 @@ public class XmlFileReader extends AbstractFileReader<XmlFileReader.XmlRecord> {
         this.schema = SchemaBuilder.struct()
                 .field(valueFieldName, Schema.STRING_SCHEMA)
                 .build();
+        this.compression = Compression.valueOf(config.getOrDefault(FILE_READER_TEXT_COMPRESSION, COMPRESSION_DEFAULT).toString());
 
         if (config.get(FILE_READER_TEXT_ENCODING) == null ||
                 config.get(FILE_READER_TEXT_ENCODING).toString().equals("")) {
@@ -61,9 +119,8 @@ public class XmlFileReader extends AbstractFileReader<XmlFileReader.XmlRecord> {
         } else {
             this.charset = Charset.forName(config.get(FILE_READER_TEXT_ENCODING).toString());
         }
-        XMLInputFactory f = XMLInputFactory.newInstance();
         try {
-            this.reader = f.createXMLEventReader(new InputStreamReader(getFs().open(getFilePath()), this.charset));
+            this.reader = INPUT_FACTORY.createXMLEventReader(new InputStreamReader(this.compression.open(getFs(), getFilePath()), this.charset));
             // go to root
             XMLEvent event = null;
             while (reader.hasNext() && !(event = this.reader.nextEvent()).isStartElement())
@@ -125,13 +182,19 @@ public class XmlFileReader extends AbstractFileReader<XmlFileReader.XmlRecord> {
         }
         checkClosed();
         try {
-            XMLInputFactory f = XMLInputFactory.newInstance();
-            final InputStreamReader tail = new InputStreamReader(getFs().open(getFilePath()), this.charset);
-            CharStreams.skipFully(tail, offset.getRecordOffset());
-            Reader reader = CharStreams.join(CharStreams.newReaderSupplier(this.rootStartTag), () -> tail).getInput();
-            this.reader = f.createXMLEventReader(reader);
-            this.offset.setSeekOffset(offset.getRecordOffset() - this.rootStartTag.length());
             this.currentRecord = null;
+            this.reader.close();
+            final InputStreamReader tail = new InputStreamReader(this.compression.open(getFs(), getFilePath()), this.charset);
+
+            if(offset.getRecordOffset() > 0) {
+                CharStreams.skipFully(tail, offset.getRecordOffset());
+                Reader reader = CharStreams.join(CharStreams.newReaderSupplier(this.rootStartTag), () -> tail).getInput();
+                this.reader = INPUT_FACTORY.createXMLEventReader(reader);
+                this.offset.setSeekOffset(offset.getRecordOffset() - this.rootStartTag.length());
+            } else {
+                this.reader = INPUT_FACTORY.createXMLEventReader(tail);
+                this.offset.setSeekOffset(0);
+            }
             // go to root
             while (this.reader.hasNext() && !this.reader.nextEvent().isStartElement())
                 ;
@@ -147,6 +210,8 @@ public class XmlFileReader extends AbstractFileReader<XmlFileReader.XmlRecord> {
     @Override
     public void close() throws IOException {
         try {
+            final XMLEventReader reader = this.reader;
+            this.reader = null;
             super.close();
             reader.close();
         } catch (XMLStreamException e) {
