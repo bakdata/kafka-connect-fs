@@ -22,19 +22,11 @@ public class AgnosticFileReader extends AbstractFileReader<AgnosticFileReader.Ag
     public static final String FILE_READER_AGNOSTIC_EXTENSIONS_SEQUENCE = FILE_READER_AGNOSTIC_EXTENSIONS + "sequence";
     public static final String FILE_READER_AGNOSTIC_EXTENSIONS_DELIMITED = FILE_READER_AGNOSTIC_EXTENSIONS + "delimited";
 
-    private final AbstractFileReader reader;
+    private AbstractFileReader reader;
     private List<String> parquetExtensions, avroExtensions, sequenceExtensions, delimitedExtensions;
 
-    public AgnosticFileReader(FileSystem fs, Path filePath, Map<String, Object> config) throws IOException {
-        super(fs, filePath, new AgnosticAdapter(), config);
-
-        try {
-            reader = (AbstractFileReader) readerByExtension(fs, filePath, config);
-        } catch (RuntimeException | IOException e) {
-            throw e;
-        } catch (Throwable t) {
-            throw new IOException("An error has ocurred when creating a concrete reader", t);
-        }
+    public AgnosticFileReader(FileSystem fs, Path filePath) throws IOException {
+        super(fs, filePath, new AgnosticAdapter());
     }
 
     private FileReader readerByExtension(FileSystem fs, Path filePath, Map<String, Object> config)
@@ -60,7 +52,7 @@ public class AgnosticFileReader extends AbstractFileReader<AgnosticFileReader.Ag
     }
 
     @Override
-    protected void configure(Map<String, Object> config) {
+    public void configure(Map<String, Object> config) throws IOException {
         this.parquetExtensions = config.get(FILE_READER_AGNOSTIC_EXTENSIONS_PARQUET) == null ?
                 Arrays.asList("parquet") :
                 Arrays.asList(config.get(FILE_READER_AGNOSTIC_EXTENSIONS_PARQUET).toString().toLowerCase().split(","));
@@ -73,6 +65,14 @@ public class AgnosticFileReader extends AbstractFileReader<AgnosticFileReader.Ag
         this.delimitedExtensions = config.get(FILE_READER_AGNOSTIC_EXTENSIONS_DELIMITED) == null ?
                 Arrays.asList("tsv", "csv") :
                 Arrays.asList(config.get(FILE_READER_AGNOSTIC_EXTENSIONS_DELIMITED).toString().toLowerCase().split(","));
+
+        try {
+            reader = (AbstractFileReader) readerByExtension(getFs(), getFilePath(), config);
+        } catch (RuntimeException | IOException e) {
+            throw e;
+        } catch (Throwable t) {
+            throw new IOException("An error has ocurred when creating a concrete reader", t);
+        }
     }
 
     @Override

@@ -28,40 +28,42 @@ public class AvroFileReader extends AbstractFileReader<GenericRecord> {
     private DataFileReader<GenericRecord> reader;
     private Schema schema;
 
-    public AvroFileReader(FileSystem fs, Path filePath, Map<String, Object> config) throws IOException {
-        super(fs, filePath, new GenericRecordToStruct(), config);
+    public AvroFileReader(FileSystem fs, Path filePath) {
+        super(fs, filePath, new GenericRecordToStruct());
 
-        AvroFSInput input = new AvroFSInput(FileContext.getFileContext(filePath.toUri()), filePath);
-        this.reader = new DataFileReader<>(input, new SpecificDatumReader<>(this.schema));
         this.offset = new AvroOffset(0);
     }
 
-    protected void configure(Map<String, Object> config) {
+    public void configure(Map<String, Object> config) throws IOException {
         if (config.get(FILE_READER_AVRO_SCHEMA) != null) {
             this.schema = new Schema.Parser().parse(config.get(FILE_READER_AVRO_SCHEMA).toString());
         } else {
             this.schema = null;
         }
+        AvroFSInput input = new AvroFSInput(FileContext.getFileContext(getFilePath().toUri()), getFilePath());
+        this.reader = new DataFileReader<>(input, new SpecificDatumReader<>(this.schema));
     }
 
     @Override
     public boolean hasNext() {
+        checkClosed();
         return reader.hasNext();
     }
 
     @Override
     protected GenericRecord nextRecord() {
         GenericRecord record = reader.next();
-        this.offset.inc();
+        this.offset.setOffset(reader.previousSync());
 
         return record;
     }
 
     @Override
     public void seek(Offset offset) {
+        checkClosed();
         try {
             reader.sync(offset.getRecordOffset());
-            this.offset.setOffset(reader.previousSync() - 15);
+            this.offset.setOffset(reader.previousSync());
         } catch (IOException ioe) {
             throw new ConnectException("Error seeking file " + getFilePath(), ioe);
         }
@@ -74,7 +76,7 @@ public class AvroFileReader extends AbstractFileReader<GenericRecord> {
 
     @Override
     public void close() throws IOException {
-        reader.sync(0);
+        super.close();
         reader.close();
     }
 

@@ -5,7 +5,9 @@ import org.apache.hadoop.fs.Path;
 import org.apache.kafka.connect.data.Struct;
 
 import java.io.Closeable;
+import java.io.IOException;
 import java.util.Iterator;
+import java.util.Map;
 import java.util.function.Function;
 
 public interface FileReader extends Iterator<Struct>, Closeable {
@@ -19,6 +21,8 @@ public interface FileReader extends Iterator<Struct>, Closeable {
     void seek(Offset offset);
 
     Offset currentOffset();
+
+    void configure(Map<String, Object> config) throws IOException;
 }
 
 @FunctionalInterface

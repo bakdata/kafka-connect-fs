@@ -61,10 +61,8 @@ public class SequenceFileReaderTest extends LocalFileReaderTestBase {
             Writable key = (Writable) ReflectionUtils.newInstance(reader.getKeyClass(), fs.getConf());
             Writable value = (Writable) ReflectionUtils.newInstance(reader.getValueClass(), fs.getConf());
             int index = 0;
-            long pos = reader.getPosition() - 1;
             while (reader.next(key, value)) {
-                OFFSETS_BY_INDEX.put(index++, pos);
-                pos = reader.getPosition();
+                OFFSETS_BY_INDEX.put(index++, reader.getPosition());
             }
         }
         Path path = new Path(new Path(fsUri), seqFile.getName());

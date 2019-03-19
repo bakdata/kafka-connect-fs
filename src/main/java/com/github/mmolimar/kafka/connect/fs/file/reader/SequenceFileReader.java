@@ -34,30 +34,26 @@ public class SequenceFileReader extends AbstractFileReader<SequenceFileReader.Se
     private final SequenceFile.Reader reader;
     private final Writable key, value;
     private final SeqOffset offset;
-    private final Schema schema;
+    private Schema schema;
     private String keyFieldName, valueFieldName;
     private long recordIndex, hasNextIndex;
     private boolean hasNext;
 
-    public SequenceFileReader(FileSystem fs, Path filePath, Map<String, Object> config) throws IOException {
-        super(fs, filePath, new SeqToStruct(), config);
+    public SequenceFileReader(FileSystem fs, Path filePath) throws IOException {
+        super(fs, filePath, new SeqToStruct());
 
         this.reader = new SequenceFile.Reader(fs.getConf(),
                 SequenceFile.Reader.file(filePath),
                 SequenceFile.Reader.bufferSize(fs.getConf().getInt(FILE_READER_BUFFER_SIZE, DEFAULT_BUFFER_SIZE)));
         this.key = (Writable) ReflectionUtils.newInstance(reader.getKeyClass(), fs.getConf());
         this.value = (Writable) ReflectionUtils.newInstance(reader.getValueClass(), fs.getConf());
-        this.schema = SchemaBuilder.struct()
-                .field(keyFieldName, getSchema(this.key))
-                .field(valueFieldName, getSchema(this.value))
-                .build();
         this.offset = new SeqOffset(0);
         this.recordIndex = this.hasNextIndex = -1;
         this.hasNext = false;
     }
 
     @Override
-    protected void configure(Map<String, Object> config) {
+    public void configure(Map<String, Object> config) {
         if (config.get(FILE_READER_SEQUENCE_FIELD_NAME_KEY) == null ||
                 config.get(FILE_READER_SEQUENCE_FIELD_NAME_KEY).toString().equals("")) {
             this.keyFieldName = FIELD_NAME_KEY_DEFAULT;
@@ -70,6 +66,10 @@ public class SequenceFileReader extends AbstractFileReader<SequenceFileReader.Se
         } else {
             this.valueFieldName = config.get(FILE_READER_SEQUENCE_FIELD_NAME_VALUE).toString();
         }
+        this.schema = SchemaBuilder.struct()
+                .field(keyFieldName, getSchema(this.key))
+                .field(valueFieldName, getSchema(this.value))
+                .build();
     }
 
     private Schema getSchema(Writable writable) {
@@ -95,11 +95,13 @@ public class SequenceFileReader extends AbstractFileReader<SequenceFileReader.Se
 
     @Override
     public boolean hasNext() {
+        checkClosed();
         try {
             if (hasNextIndex == -1 || hasNextIndex == recordIndex) {
                 hasNextIndex++;
-                offset.inc();
-                return hasNext = reader.next(key, value);
+                hasNext = reader.next(key, value);
+                offset.setOffset(reader.getPosition());
+                return hasNext;
             }
             return hasNext;
         } catch (EOFException eofe) {
@@ -123,6 +125,7 @@ public class SequenceFileReader extends AbstractFileReader<SequenceFileReader.Se
         if (offset.getRecordOffset() < 0) {
             throw new IllegalArgumentException("Record offset must be greater than 0");
         }
+        checkClosed();
         try {
             reader.sync(offset.getRecordOffset());
             hasNextIndex = recordIndex = offset.getRecordOffset();
@@ -140,6 +143,7 @@ public class SequenceFileReader extends AbstractFileReader<SequenceFileReader.Se
 
     @Override
     public void close() throws IOException {
+        super.close();
         reader.close();
     }
 
@@ -152,10 +156,6 @@ public class SequenceFileReader extends AbstractFileReader<SequenceFileReader.Se
 
         public void setOffset(long offset) {
             this.offset = offset;
-        }
-
-        protected void inc() {
-            this.offset++;
         }
 
         @Override

@@ -34,14 +34,13 @@ public class TextFileReader extends AbstractFileReader<TextFileReader.TextRecord
     private Schema schema;
     private Charset charset;
 
-    public TextFileReader(FileSystem fs, Path filePath, Map<String, Object> config) throws IOException {
-        super(fs, filePath, new TxtToStruct(), config);
-        this.reader = new LineNumberReader(new InputStreamReader(fs.open(filePath), this.charset));
+    public TextFileReader(FileSystem fs, Path filePath) {
+        super(fs, filePath, new TxtToStruct());
         this.offset = new TextOffset(0);
     }
 
     @Override
-    protected void configure(Map<String, Object> config) {
+    public void configure(Map<String, Object> config) throws IOException {
         String valueFieldName;
         if (config.get(FILE_READER_TEXT_FIELD_NAME_VALUE) == null ||
                 config.get(FILE_READER_TEXT_FIELD_NAME_VALUE).toString().equals("")) {
@@ -59,10 +58,12 @@ public class TextFileReader extends AbstractFileReader<TextFileReader.TextRecord
         } else {
             this.charset = Charset.forName(config.get(FILE_READER_TEXT_ENCODING).toString());
         }
+        this.reader = new LineNumberReader(new InputStreamReader(getFs().open(getFilePath()), this.charset));
     }
 
     @Override
     public boolean hasNext() {
+        checkClosed();
         if (currentLine != null) {
             return true;
         } else if (finished) {
@@ -101,6 +102,7 @@ public class TextFileReader extends AbstractFileReader<TextFileReader.TextRecord
         if (offset.getRecordOffset() < 0) {
             throw new IllegalArgumentException("Record offset must be greater than 0");
         }
+        checkClosed();
         try {
             if (offset.getRecordOffset() < reader.getLineNumber()) {
                 this.reader = new LineNumberReader(new InputStreamReader(getFs().open(getFilePath())));
@@ -125,7 +127,9 @@ public class TextFileReader extends AbstractFileReader<TextFileReader.TextRecord
 
     @Override
     public void close() throws IOException {
+        super.close();
         reader.close();
+        this.currentLine = null;
     }
 
     public static class TextOffset implements Offset {

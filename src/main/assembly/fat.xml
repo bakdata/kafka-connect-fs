@@ -3,42 +3,24 @@
           xsi:schemaLocation="http://maven.apache.org/plugins/maven-assembly-plugin/assembly/1.1.2
           http://maven.apache.org/xsd/assembly-1.1.2.xsd">
   <!-- Assembles a packaged version targeting OS installation. -->
-  <id>package</id>
+  <id>fat</id>
   <formats>
-    <format>dir</format>
+    <format>jar</format>
   </formats>
   <includeBaseDirectory>false</includeBaseDirectory>
-  <fileSets>
-    <fileSet>
-      <directory>${project.basedir}</directory>
-      <outputDirectory>share/doc/${project.name}/</outputDirectory>
-      <includes>
-        <include>README*</include>
-        <include>LICENSE*</include>
-        <include>NOTICE*</include>
-        <include>licenses/</include>
-      </includes>
-    </fileSet>
-    <fileSet>
-      <directory>${project.basedir}/config</directory>
-      <outputDirectory>etc/${project.name}</outputDirectory>
-      <includes>
-        <include>*</include>
-      </includes>
-    </fileSet>
-  </fileSets>
   <dependencySets>
     <dependencySet>
-      <outputDirectory>share/java/${project.name}</outputDirectory>
+        <outputDirectory>/</outputDirectory>
       <useProjectArtifact>true</useProjectArtifact>
       <useTransitiveFiltering>true</useTransitiveFiltering>
+      <unpack>true</unpack>
       <excludes>
         <exclude>org.apache.kafka:connect-api</exclude>
         <exclude>org.mortbay.jetty:*</exclude>
         <exclude>com.sun.jersey:*</exclude>
         <exclude>org.eclipse.jetty.aggregate:jetty-all</exclude>
         <exclude>com.sun.jersey.contribs:jersey-guice</exclude>
-        <!--<exclude>com.google.guava:guava</exclude>-->
+        <exclude>com.google.guava:guava</exclude>
         <exclude>org.apache.zookeeper:zookeeper</exclude>
         <exclude>log4j:log4j</exclude>
         <exclude>org.slf4j:slf4j-api</exclude>

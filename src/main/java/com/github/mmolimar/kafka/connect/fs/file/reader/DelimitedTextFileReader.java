@@ -24,21 +24,35 @@ public class DelimitedTextFileReader extends AbstractFileReader<DelimitedTextFil
     private static final String DEFAULT_COLUMN_NAME = "column";
 
     private final TextFileReader inner;
-    private final Schema schema;
+    private Schema schema;
     private DelimitedTextOffset offset;
     private String token;
     private String defaultValue;
     private boolean hasHeader;
 
-    public DelimitedTextFileReader(FileSystem fs, Path filePath, Map<String, Object> config) throws IOException {
-        super(fs, filePath, new DelimitedTxtToStruct(), config);
+    public DelimitedTextFileReader(FileSystem fs, Path filePath) throws IOException {
+        super(fs, filePath, new DelimitedTxtToStruct());
 
+        this.inner = new TextFileReader(fs, filePath);
+    }
+
+    @Override
+    public void configure(Map<String, Object> config) throws IOException {
+        if (config.get(FILE_READER_DELIMITED_TOKEN) == null ||
+                config.get(FILE_READER_DELIMITED_TOKEN).toString().equals("")) {
+            throw new IllegalArgumentException(FILE_READER_DELIMITED_TOKEN + " property cannot be empty for DelimitedTextFileReader");
+        }
         //mapping encoding for text file reader
         if (config.get(FILE_READER_DELIMITED_ENCODING) != null) {
             config.put(TextFileReader.FILE_READER_TEXT_ENCODING, config.get(FILE_READER_DELIMITED_ENCODING));
         }
-        this.inner = new TextFileReader(fs, filePath, config);
-        this.offset = new DelimitedTextOffset(0, hasHeader);
+        this.token = config.get(FILE_READER_DELIMITED_TOKEN).toString();
+        this.defaultValue = config.get(FILE_READER_DELIMITED_DEFAULT_VALUE) == null ?
+                null : config.get(FILE_READER_DELIMITED_DEFAULT_VALUE).toString();
+        this.hasHeader = Boolean.valueOf((String) config.get(FILE_READER_DELIMITED_HEADER));
+        this.offset = new DelimitedTextOffset(0);
+
+        this.inner.configure(config);
 
         SchemaBuilder schemaBuilder = SchemaBuilder.struct();
         if (hasNext()) {
@@ -55,18 +69,6 @@ public class DelimitedTextFileReader extends AbstractFileReader<DelimitedTextFil
             }
         }
         this.schema = schemaBuilder.build();
-    }
-
-    @Override
-    protected void configure(Map<String, Object> config) {
-        if (config.get(FILE_READER_DELIMITED_TOKEN) == null ||
-                config.get(FILE_READER_DELIMITED_TOKEN).toString().equals("")) {
-            throw new IllegalArgumentException(FILE_READER_DELIMITED_TOKEN + " property cannot be empty for DelimitedTextFileReader");
-        }
-        this.token = config.get(FILE_READER_DELIMITED_TOKEN).toString();
-        this.defaultValue = config.get(FILE_READER_DELIMITED_DEFAULT_VALUE) == null ?
-                null : config.get(FILE_READER_DELIMITED_DEFAULT_VALUE).toString();
-        this.hasHeader = Boolean.valueOf((String) config.get(FILE_READER_DELIMITED_HEADER));
     }
 
     @Override
@@ -112,15 +114,13 @@ public class DelimitedTextFileReader extends AbstractFileReader<DelimitedTextFil
 
     public static class DelimitedTextOffset implements Offset {
         private long offset;
-        private boolean hasHeader;
 
-        public DelimitedTextOffset(long offset, boolean hasHeader) {
-            this.hasHeader = hasHeader;
-            this.offset = hasHeader && offset >= 0 ? offset + 1 : offset;
+        public DelimitedTextOffset(long offset) {
+            this.offset = offset;
         }
 
         public void setOffset(long offset) {
-            this.offset = hasHeader && offset > 0 ? offset - 1 : offset;
+            this.offset = offset;
         }
 
         protected void inc() {
