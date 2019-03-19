@@ -1,8 +1,6 @@
 package com.github.mmolimar.kafka.connect.fs.file.reader;
 
 import com.github.mmolimar.kafka.connect.fs.file.Offset;
-import com.google.common.io.CharStreams;
-import org.apache.hadoop.fs.FSDataInputStream;
 import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
 import org.apache.kafka.connect.data.Schema;
@@ -15,7 +13,12 @@ import javax.xml.stream.XMLEventReader;
 import javax.xml.stream.XMLInputFactory;
 import javax.xml.stream.XMLStreamException;
 import javax.xml.stream.events.XMLEvent;
-import java.io.*;
+import java.io.EOFException;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.InputStreamReader;
+import java.io.PushbackReader;
+import java.io.StringWriter;
 import java.nio.charset.Charset;
 import java.util.Map;
 import java.util.NoSuchElementException;
@@ -184,12 +187,13 @@ public class XmlFileReader extends AbstractFileReader<XmlFileReader.XmlRecord> {
         try {
             this.currentRecord = null;
             this.reader.close();
-            final InputStreamReader tail = new InputStreamReader(this.compression.open(getFs(), getFilePath()), this.charset);
+            final PushbackReader tail = new PushbackReader(new InputStreamReader(
+                    this.compression.open(getFs(), getFilePath()), this.charset), this.rootStartTag.length());
 
             if(offset.getRecordOffset() > 0) {
-                CharStreams.skipFully(tail, offset.getRecordOffset());
-                Reader reader = CharStreams.join(CharStreams.newReaderSupplier(this.rootStartTag), () -> tail).getInput();
-                this.reader = INPUT_FACTORY.createXMLEventReader(reader);
+                skipFully(offset, tail);
+                tail.unread(this.rootStartTag.toCharArray());
+                this.reader = INPUT_FACTORY.createXMLEventReader(tail);
                 this.offset.setSeekOffset(offset.getRecordOffset() - this.rootStartTag.length());
             } else {
                 this.reader = INPUT_FACTORY.createXMLEventReader(tail);
@@ -202,6 +206,18 @@ public class XmlFileReader extends AbstractFileReader<XmlFileReader.XmlRecord> {
             throw new RuntimeException("Cannot seek in event reader", e);
         }
     }
+    
+    private void skipFully(final Offset offset, final PushbackReader tail) throws IOException {
+        long charactersToSkip = offset.getRecordOffset();
+        while (charactersToSkip > 0) {
+           long skipped = tail.skip(charactersToSkip);
+           if (skipped == 0) {
+               throw new EOFException();
+           }
+           charactersToSkip -= skipped;
+        }
+    }
+    
     @Override
     public Offset currentOffset() {
         return offset;
