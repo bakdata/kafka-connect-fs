@@ -1,0 +1,20 @@
+version: 2
+updates:
+- package-ecosystem: maven
+  directory: "/"
+  schedule:
+    interval: daily
+    time: "04:00"
+  open-pull-requests-limit: 10
+  ignore:
+  - dependency-name: org.apache.kafka:connect-api
+    versions:
+    - 6.0.1-ce
+    - 6.1.0-ce
+  - dependency-name: org.apache.parquet:parquet-avro
+    versions:
+    - 1.11.1
+  - dependency-name: org.easymock:easymock
+    versions:
+    - "4.2"
+  rebase-strategy: disabled
